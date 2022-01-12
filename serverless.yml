@@ -1,0 +1,167 @@
+service: composer
+frameworkVersion: '2 || 3'
+
+plugins:
+  - serverless-webpack
+  - serverless-deployment-bucket
+  - serverless-offline
+
+# Customer values.
+custom:
+  accountId: ${aws:accountId}
+  eventStoreName: event-store
+  mainStreamName: main-stream
+  region: ap-southeast-2
+  stage: ${opt:stage}
+  websocketApiName: 'composer-websocket'
+
+  webpack:
+    includeModules:
+      forceExclude:
+        - aws-sdk
+
+# The Serverless provider config.
+provider:
+  name: aws
+  runtime: nodejs12.x
+  lambdaHashingVersion: 20201221
+  deploymentBucket:
+    name: composer-deployment-bucket-${self:custom.accountId}
+  environment:
+    ACCOUNT_ID: ${self:custom.accountId}
+    EVENT_STORE_NAME: ${self:custom.eventStoreName}
+    MAIN_STREAM_NAME: ${self:custom.mainStreamName}
+    REGION: ${self:custom.region}
+    STAGE: ${self:custom.stage}
+  region: ${self:custom.region}
+  websocketsApiName: ${self:custom.websocketApiName}
+  websocketsApiRouteSelectionExpression: $request.body.action
+  # Permissions.
+  iamRoleStatements:
+    # DynamoDB permissions.
+    - Effect: Allow
+      Resource:
+        - 'arn:aws:dynamodb:*:*:*'
+      Action:
+        - 'kinesis:GetItem'
+        - 'kinesis:PutItem'
+        - 'kinesis:Query'
+        - 'kinesis:Scan'
+        - 'kinesis:ScanUpdateItem'
+    # Kinesis permissions.
+    - Effect: Allow
+      Resource:
+        - 'arn:aws:kinesis:*:*:*'
+      Action:
+        - 'kinesis:PutRecord'
+
+# Resources.
+resources:
+  Resources:
+    # The main event store that will store all events.
+    EventStore:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.eventStoreName}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: pk
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+          - AttributeName: subject
+            AttributeType: S
+          - AttributeName: topic
+            AttributeType: S
+        KeySchema:
+          - AttributeName: pk
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: subject
+            KeySchema:
+              - AttributeName: subject
+                KeyType: HASH
+              - AttributeName: sk
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: topic
+            KeySchema:
+              - AttributeName: topic
+                KeyType: HASH
+              - AttributeName: sk
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    # The main kinesis stream.
+    MainStream:
+      Type: AWS::Kinesis::Stream
+      Properties:
+        Name: ${self:custom.mainStreamName}
+        ShardCount: 1
+        RetentionPeriodHours: 48
+
+  Outputs:
+    EventStore:
+      Description: The event store name.
+      Value: !Ref EventStore
+
+    EventStoreARN:
+      Description: The event store ARN.
+      Value:
+        Fn::GetAtt:
+          - EventStore
+          - Arn
+
+    MainStream:
+      Description: The main stream name.
+      Value: !Ref MainStream
+
+    MainStreamARN:
+      Description: The main stream ARN.
+      Value:
+        Fn::GetAtt:
+          - MainStream
+          - Arn
+
+# Lambda functions.
+functions:
+  # Function handlers.
+  TestMainHandler:
+    name: test-main-handler
+    handler: src/handler/test/main.defaultHandler
+
+  # Socket handlers.
+  SocketConnectionHandler:
+    name: socket-connection-handler
+    handler: src/handler/socket/connection.defaultHandler
+    events:
+      - websocket:
+          route: $connect
+      - websocket:
+          route: $disconnect
+
+  SocketDefaultHandler:
+    name: socket-default-handler
+    handler: src/handler/socket/default.defaultHandler
+    events:
+      - websocket: $default
+
+  # Stream handlers.
+  StreamMainHandler:
+    name: stream-main-handler
+    handler: src/handler/stream/main.defaultHandler
+    events:
+      - stream:
+          type: kinesis
+          arn:
+            Fn::GetAtt:
+              - MainStream
+              - Arn
+          consumer: true
+          enabled: true
+          maximumRetryAttempts: 1
+          startingPosition: LATEST
