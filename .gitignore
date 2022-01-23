@@ -81,4 +81,5 @@ typings/
 # Folders to ignore.
 .build
 .dynamodb
+.serverless
 .webpack
