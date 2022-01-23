@@ -1,4 +1,3 @@
-import { getMainStreamName } from '@data/environment.data';
 import type { EventStream, EventSystem } from '@type/event.type';
 import { dynamoDbConverter, kinesisClient } from '@utility/aws.utility';
 import type { Kinesis } from 'aws-sdk';
@@ -49,11 +48,11 @@ const streamDecodeKinesisRecord$ = (
 };
 
 // Write to a stream.
-export const streamWrite$ =
-  (streamName = getMainStreamName()) =>
-  (event$: Observable<EventSystem>) => {
+export const streamWrite$ = (streamName: string) => {
+  return (event$: Observable<EventSystem>) => {
     return event$.pipe(toKinesisPut$(streamName), streamWriteRecord$);
   };
+};
 
 const streamWriteRecord$ = (record$: Observable<Kinesis.PutRecordInput>) => {
   return record$.pipe(

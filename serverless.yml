@@ -29,7 +29,6 @@ provider:
     name: composer-deployment-bucket-${self:custom.accountId}
   environment:
     ACCOUNT_ID: ${self:custom.accountId}
-    EVENT_STORE_NAME: ${self:custom.eventStoreName}
     MAIN_STREAM_NAME: ${self:custom.mainStreamName}
     REGION: ${self:custom.region}
     STAGE: ${self:custom.stage}
@@ -38,16 +37,6 @@ provider:
   websocketsApiRouteSelectionExpression: $request.body.action
   # Permissions.
   iamRoleStatements:
-    # DynamoDB permissions.
-    - Effect: Allow
-      Resource:
-        - 'arn:aws:dynamodb:*:*:*'
-      Action:
-        - 'kinesis:GetItem'
-        - 'kinesis:PutItem'
-        - 'kinesis:Query'
-        - 'kinesis:Scan'
-        - 'kinesis:ScanUpdateItem'
     # Kinesis permissions.
     - Effect: Allow
       Resource:
@@ -58,44 +47,6 @@ provider:
 # Resources.
 resources:
   Resources:
-    # The main event store that will store all events.
-    EventStore:
-      Type: AWS::DynamoDB::Table
-      Properties:
-        TableName: ${self:custom.eventStoreName}
-        BillingMode: PAY_PER_REQUEST
-        AttributeDefinitions:
-          - AttributeName: pk
-            AttributeType: S
-          - AttributeName: sk
-            AttributeType: S
-          - AttributeName: subject
-            AttributeType: S
-          - AttributeName: topic
-            AttributeType: S
-        KeySchema:
-          - AttributeName: pk
-            KeyType: HASH
-          - AttributeName: sk
-            KeyType: RANGE
-        GlobalSecondaryIndexes:
-          - IndexName: subject
-            KeySchema:
-              - AttributeName: subject
-                KeyType: HASH
-              - AttributeName: sk
-                KeyType: RANGE
-            Projection:
-              ProjectionType: ALL
-          - IndexName: topic
-            KeySchema:
-              - AttributeName: topic
-                KeyType: HASH
-              - AttributeName: sk
-                KeyType: RANGE
-            Projection:
-              ProjectionType: ALL
-
     # The main kinesis stream.
     MainStream:
       Type: AWS::Kinesis::Stream
@@ -105,17 +56,6 @@ resources:
         RetentionPeriodHours: 48
 
   Outputs:
-    EventStore:
-      Description: The event store name.
-      Value: !Ref EventStore
-
-    EventStoreARN:
-      Description: The event store ARN.
-      Value:
-        Fn::GetAtt:
-          - EventStore
-          - Arn
-
     MainStream:
       Description: The main stream name.
       Value: !Ref MainStream
